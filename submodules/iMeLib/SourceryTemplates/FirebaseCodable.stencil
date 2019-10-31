@@ -1,0 +1,92 @@
+import FirebaseFirestore
+
+public extension KeyedDecodingContainer  {
+    public func decode<K: Decodable & RawRepresentable, V: Decodable>(_ type: [K: V].Type, forKey key: Key) throws -> [K: V] where K.RawValue: Decodable & Hashable {
+        let stringDictionary = try self.decode([K.RawValue: V].self, forKey: key)
+
+        return try stringDictionary.reduce(into: [:]) { result, pair in
+            guard let itemKey = K(rawValue: pair.key) else {
+                throw DecodingError.dataCorruptedError(forKey: key, in: self, debugDescription: "Could not parse json key to \(K.self)")
+            }
+            result[itemKey] = pair.value
+        }
+    }
+
+    public func decodeIfPresent<K: Decodable & RawRepresentable, V: Decodable>(_ type: [K: V].Type, forKey key: Key) throws -> [K: V]? where K.RawValue: Decodable & Hashable {
+        return try self.decodeIfPresent([K.RawValue: V].self, forKey: key).map { stringDictionary in
+            try stringDictionary.reduce(into: [:]) { result, pair in
+                guard let itemKey = K(rawValue: pair.key) else {
+                    throw DecodingError.dataCorruptedError(forKey: key, in: self, debugDescription: "Could not parse json key to \(K.self)")
+                }
+                result[itemKey] = pair.value
+            }
+        }
+    }
+}
+
+extension KeyedEncodingContainer {
+    public mutating func encode<K: Encodable & RawRepresentable, V: Encodable>(_ value: [K: V], forKey key: Key) throws where K.RawValue: Encodable & Hashable {
+        let dict = value.reduce(into: [:]) { result, pair in
+            result[pair.key.rawValue] = pair.value
+        }
+        try self.encode(dict, forKey: key)
+    }
+
+    public mutating func encodeIfPresent<K: Encodable & RawRepresentable, V: Encodable>(_ value: [K: V]?, forKey key: Key) throws where K.RawValue: Encodable & Hashable {
+        let dict = value.map { value in
+            value.reduce(into: [:]) { result, pair in
+                result[pair.key.rawValue] = pair.value
+            }
+        }
+        try self.encode(dict, forKey: key)
+    }
+}
+
+{% for type in types.structs where type.implements.FirebaseCodable %}
+extension {{ type.name }}: Codable {
+    enum CodingKeys: String, CodingKey {
+        {% for var in type.variables|!static|!computed %}
+        case {{ var.name }}
+        {% endfor %}
+    }
+
+    {{ type.accessLevel }} init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        {% for var in type.variables|!static|!computed %}
+        {% if var.defaultValue == nil and not var.typeName.isOptional %}
+        {{ var.name }} = try container.decode({{ var.typeName }}.self, forKey: .{{ var.name }})
+        {% elif var.defaultValue != nil %}
+        {{ var.name }} = try container.decodeIfPresent({{ var.typeName }}.self, forKey: .{{ var.name }}) ?? {{ var.defaultValue }}
+        {% elif var.typeName.isOptional %}
+        {% if var.name != "id" %}
+        {{ var.name }} = try container.decodeIfPresent({{ var.typeName.unwrappedTypeName }}.self, forKey: .{{ var.name }})
+        {% else %}
+        if let rawId = container.codingPath.last?.stringValue {
+            {{ var.name }} = .init(raw: rawId)
+        } else {
+            {{ var.name }} = nil
+        }
+        {% endif %}
+        {% else %}
+        {{ var.name }} = try container.decodeIfPresent({{ var.typeName }}.self, forKey: .{{ var.name }})
+        {% endif %}
+        {% endfor %}
+    }
+
+    {{ type.accessLevel }} func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+
+        {% for var in type.variables|!static|!computed %}
+        {% if var.name != "id" %}
+        {% if var.typeName.isOptional %}
+        try container.encodeIfPresent({{ var.name }}, forKey: .{{ var.name }})
+        {% else %}
+        try container.encode({{ var.name }}, forKey: .{{ var.name }})
+        {% endif %}
+        {% endif %}
+        {% endfor %}
+    }
+}
+
+{% endfor %}

@@ -1,0 +1,5 @@
+sources:
+- Sources/
+templates:
+- SourceryTemplates
+output: Sources/Generated

@@ -1,0 +1,33 @@
+stages:
+  - build
+
+variables:
+  LANG: "en_US.UTF-8"
+  LC_ALL: "en_US.UTF-8"
+  GIT_SUBMODULE_STRATEGY: normal
+
+internal:
+  tags:
+    - ios_internal
+  stage: build
+  only:
+    - master
+  except:
+    - tags
+  script:
+    - bash buildbox/build-telegram.sh hockeyapp
+  environment:
+    name: internal
+
+beta_testflight:
+  tags:
+    - ios_beta
+  stage: build
+  only:
+    - beta
+  except:
+    - tags
+  script:
+    - bash buildbox/build-telegram.sh appstore
+  environment:
+    name: testflight_llc

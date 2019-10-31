@@ -1,0 +1,61 @@
+{% macro getTypeName type %}{% if type.actualTypeName %}{{ type.actualTypeName.name }}{% else %}{{ type.typeName.name }}{% endif %}{% endmacro %}
+{% macro getValueName associated %}{% if associated.externalName %}{{ associated.externalName }}: {% endif %}{% endmacro %}
+
+import FirebaseFirestore
+import FirestoreKit
+
+{% for type in types.structs where type.implements.FirebaseKeyable %}
+extension {{ type.name }} {
+    typealias Key = EntityKey
+    enum EntityKey: String, {% if type.implements.FirebaseEntity %}FirebaseEntityKey{% else %}FirebaseModelKey{% endif %} {
+        typealias KeyedEntity = {{ type.name }}
+
+        {% for var in type.variables|!static|!computed %}
+        case {{ var.name }}
+        {% endfor %}
+
+        {% if type.implements.FirebaseEntity %}
+        static var idKey: EntityKey = .id
+        {% endif %}
+
+        static var all: [EntityKey] = .all
+        static var primitive: [EntityKey] = .primitive
+        static var indexes: [EntityKey] = .indexes
+
+        static var keyPaths: [PartialKeyPath<{{ type.name }}>: EntityKey] = [
+            {% for var in type.variables|!static|!computed %}
+            \{{ type.name }}.{{ var.name }}: EntityKey.{{ var.name }},
+            {% endfor %}
+        ]
+    }
+}
+
+extension EntityProperty where Entity == {{ type.name }} {
+    {% for var in type.variables|!static|!computed %}
+    static var {{ var.name }}: EntityProperty<{{ type.name }}, {% call getTypeName var %}> {
+        return .init(name: "{{ var.name }}")
+    }
+    {% endfor %}
+}
+
+extension Array where Element == {{ type.name }}.EntityKey {
+    static var all: [{{ type.name }}.EntityKey] = [
+        {% for var in type.variables|!static|!computed %}
+        {{ type.name }}.EntityKey.{{ var.name }},
+        {% endfor %}
+    ]
+
+    static var primitive: [{{ type.name }}.EntityKey] = [
+        {% for var in type.variables|!static|!computed where not var.type.implements.FirebaseIndex %}
+        {{ type.name }}.EntityKey.{{ var.name }},
+        {% endfor %}
+    ]
+
+    static var indexes: [{{ type.name }}.EntityKey] = [
+        {% for var in type.variables|!static|!computed where var.type.implements.FirebaseIndex %}
+        {{ type.name }}.EntityKey.{{ var.name }},
+        {% endfor %}
+    ]
+}
+
+{% endfor %}
